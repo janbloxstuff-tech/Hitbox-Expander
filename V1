@@ -11,6 +11,7 @@ local MIN_HEAD_SIZE = 1
 local MAX_HEAD_SIZE = 50
 local MIN_HEAD_TRANSPARENCY = 0
 local MAX_HEAD_TRANSPARENCY = 1
+local LAY_DOWN_OFFSET = 2
 
 local DEFAULT_WALK_SPEED = 16
 local DEFAULT_JUMP_POWER = 50
@@ -32,7 +33,7 @@ local mainFrame = Instance.new("Frame")
 mainFrame.Name = "MainFrame"
 mainFrame.AnchorPoint = Vector2.new(0.5, 0.5)
 mainFrame.Position = UDim2.fromScale(0.5, 0.5)
-mainFrame.Size = UDim2.fromOffset(430, 700)
+mainFrame.Size = UDim2.fromOffset(300, 500)
 mainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 24)
 mainFrame.BorderSizePixel = 0
 mainFrame.Active = true
@@ -578,25 +579,29 @@ end
 local function applyHeadEffectsToTracker(tracker, humanoid)
 	local model = tracker.model
 	local head = model and model:FindFirstChild("Head")
-	if not head or not head:IsA("BasePart") then
-		return
-	end
+	if not head or not head:IsA("BasePart") then return end
 
-	if tracker.originalHeadTransparency == nil then
-		tracker.originalHeadTransparency = head.Transparency
-	end
-	if tracker.originalHeadCanCollide == nil then
-		tracker.originalHeadCanCollide = head.CanCollide
-	end
-	if tracker.originalHeadMassless == nil then
-		tracker.originalHeadMassless = head.Massless
-	end
 	if tracker.originalHeadSize == nil then
 		tracker.originalHeadSize = head.Size
 		local mesh = head:FindFirstChildOfClass("SpecialMesh")
+		tracker.originalHeadMeshScale = mesh and mesh.Scale or Vector3.new(1,1,1)
+	end
+
+	local shouldApply = sizeEnabled
+	local sizeFactor = (tracker.kind == "Player" and playerHeadSize or npcHeadSize) / 10
+	
+	if shouldApply then
+		local mesh = head:FindFirstChildOfClass("SpecialMesh")
 		if mesh then
-			tracker.originalHeadMeshScale = mesh.Scale
+			mesh.Scale = tracker.originalHeadMeshScale * sizeFactor
+		else
+			head.Size = tracker.originalHeadSize * sizeFactor
 		end
+	else
+		local mesh = head:FindFirstChildOfClass("SpecialMesh")
+		if mesh then mesh.Scale = tracker.originalHeadMeshScale end
+		head.Size = tracker.originalHeadSize
+	end
 		local headScale = humanoid and humanoid:FindFirstChild("HeadScale")
 		if headScale and headScale:IsA("NumberValue") then
 			tracker.originalHeadScaleValue = headScale.Value
@@ -685,22 +690,22 @@ local function ensureTracker(model, kind, player)
 end
 
 local function trackPlayerCharacter(player)
-	if player == LocalPlayer then
-		return
-	end
+	if player == LocalPlayer then return end
 
 	local function onCharacter(character)
-		task.wait(0.15)
+		task.wait(0.5) -- Give time for character to fully load
 		if character and character.Parent then
 			ensureTracker(character, "Player", player)
 		end
 	end
 
 	player.CharacterAdded:Connect(onCharacter)
+	-- FIX: Cleanup on removal
+	player.CharacterRemoving:Connect(function(char)
+		cleanupTracker(char)
+	end)
 
-	if player.Character then
-		task.spawn(onCharacter, player.Character)
-	end
+	if player.Character then task.spawn(onCharacter, player.Character) end
 end
 
 local function tryTrackNPCModel(model)
@@ -754,9 +759,25 @@ local function applyMovementToCharacter(character)
 	humanoid.WalkSpeed = wsValue
 	humanoid.JumpPower = jpValue
 
+	local rootPart = character:FindFirstChild("HumanoidRootPart")
+	local rootJoint = rootPart and rootPart:FindFirstChild("RootJoint")
+
 	if layingDown then
-		humanoid.HipHeight = -2
+		if humanoid.RigType == Enum.HumanoidRigType.R15 and rootJoint then
+			if not rootJoint:FindFirstChild("OriginalC0") then
+				local orig = Instance.new("CFrameValue")
+				orig.Name = "OriginalC0"
+				orig.Value = rootJoint.C0
+				orig.Parent = rootJoint
+			end
+			rootJoint.C0 = rootJoint.OriginalC0.Value * CFrame.new(0, -LAY_DOWN_OFFSET, 0)
+		else
+			humanoid.HipHeight = -LAY_DOWN_OFFSET
+		end
 	else
+		if rootJoint and rootJoint:FindFirstChild("OriginalC0") then
+			rootJoint.C0 = rootJoint.OriginalC0.Value
+		end
 		humanoid.HipHeight = originalHipHeight or humanoid.HipHeight
 	end
 end
