@@ -602,11 +602,6 @@ local function applyHeadEffectsToTracker(tracker, humanoid)
 		if mesh then mesh.Scale = tracker.originalHeadMeshScale end
 		head.Size = tracker.originalHeadSize
 	end
-		local headScale = humanoid and humanoid:FindFirstChild("HeadScale")
-		if headScale and headScale:IsA("NumberValue") then
-			tracker.originalHeadScaleValue = headScale.Value
-		end
-	end
 
 	local shouldApply = false
 	local sizeValue = 10
